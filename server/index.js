@@ -1,3 +1,10 @@
+const path = require('path');
+const dotenv = require('dotenv');
+
+// Load environment variables from server/.env or root .env
+dotenv.config({ path: path.resolve(__dirname, '.env') });
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
+
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -13,7 +20,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 if (!process.env.JWT_SECRET) {
-  console.error('Error: JWT_SECRET not set in environment');
+  console.error('Error: JWT_SECRET not set in environment. Please set it in server/.env');
   process.exit(1);
 }
 

@@ -16,6 +16,17 @@ function validatePost(title, content) {
   }
 }
 
+function sanitizePost(post) {
+  if (!post) return null;
+  const isAnon = Boolean(post.isAnonymous);
+  const { authorId, ...rest } = post;
+  return {
+    ...rest,
+    author: isAnon ? null : post.author,
+    authorId: isAnon ? null : authorId
+  };
+}
+
 // Get all approved posts (public)
 router.get('/', async (req, res, next) => {
   try {
@@ -32,10 +43,7 @@ router.get('/', async (req, res, next) => {
       }
     });
 
-    const sanitizedPosts = posts.map(post => ({
-      ...post,
-      author: post.isAnonymous ? null : post.author
-    }));
+    const sanitizedPosts = posts.map(sanitizePost);
 
     res.json({ posts: sanitizedPosts });
   } catch (error) {
@@ -71,10 +79,7 @@ router.get('/:id', async (req, res, next) => {
     }
 
     res.json({
-      post: {
-        ...post,
-        author: post.isAnonymous ? null : post.author
-      }
+      post: sanitizePost(post)
     });
   } catch (error) {
     next(error);
@@ -88,11 +93,14 @@ router.post('/', authenticateToken, async (req, res, next) => {
 
     validatePost(title, content);
 
+    const defaultStatus = process.env.AUTO_APPROVE_POSTS === 'false' ? 'PENDING' : 'APPROVED';
+
     const post = await prisma.post.create({
       data: {
         title: title.trim(),
         content: content.trim(),
         isAnonymous: isAnonymous || false,
+        status: defaultStatus,
         authorId: req.user.userId
       },
       include: {
@@ -103,10 +111,7 @@ router.post('/', authenticateToken, async (req, res, next) => {
     });
 
     res.status(201).json({
-      post: {
-        ...post,
-        author: post.isAnonymous ? null : post.author
-      }
+      post: sanitizePost(post)
     });
   } catch (error) {
     next(error);
@@ -143,10 +148,7 @@ router.put('/:id', authenticateToken, async (req, res, next) => {
     });
 
     res.json({
-      post: {
-        ...post,
-        author: post.isAnonymous ? null : post.author
-      }
+      post: sanitizePost(post)
     });
   } catch (error) {
     next(error);
@@ -190,6 +192,32 @@ router.get('/user/my-posts', authenticateToken, async (req, res, next) => {
     });
 
     res.json({ posts });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Update post status (moderation)
+router.patch('/:id/status', authenticateToken, async (req, res, next) => {
+  try {
+    const { status } = req.body;
+    const postId = req.params.id;
+
+    if (!['PENDING', 'APPROVED', 'REJECTED'].includes(status)) {
+      throw Object.assign(new Error('Invalid status. Must be PENDING, APPROVED, or REJECTED'), { name: 'ValidationError' });
+    }
+
+    const post = await prisma.post.update({
+      where: { id: postId },
+      data: { status },
+      include: {
+        author: {
+          select: { id: true, name: true }
+        }
+      }
+    });
+
+    res.json({ post: sanitizePost(post) });
   } catch (error) {
     next(error);
   }
